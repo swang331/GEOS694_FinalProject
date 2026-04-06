@@ -28,18 +28,12 @@ import matplotlib.pyplot as plt
 # User config
 JSON_PATH = r"/Users/serinawang/Desktop/g2s_2023-10-18.json"    # Specify G2S file path here
 
-# Or: download a new G2S JSON before processing
-DOWNLOAD_JSON = True
+# OR: download JSON file in script
+DOWNLOAD_JSON = False          # Default behavior if not prompting
+RUN_DOWNLOAD_PROMPT = True     # Ask at runtime whether to download a new JSON
 
 # Path to the existing G2S wrapper
 G2S_CLI_PATH = r"/Users/serinawang/Desktop/GEOS694_FinalProject/ncpag2s.py"
-
-# Download settings used only if DOWNLOAD_JSON = True
-G2S_DATE = "2023-10-18"
-G2S_HOUR = "15"
-G2S_LAT = 37.238
-G2S_LON = -116.159
-DOWNLOADED_JSON_PATH = r"/Users/serinawang/Desktop/g2s_2023-10-18_37-116.json"
 
 
 # Direction of propagation for effective sound speed, measured clockwise from East:
@@ -55,33 +49,69 @@ PLOT_MAX_HEIGHT_M = 100000
 SHOW_PLOTS = True
 
 
-def download_g2s_json():    # If not reading from an existing file
+def prompt_g2s_download_specs():
     """
-    Optionally download a G2S JSON file using the existing ncpag2s.py CLI.
+    Prompt user for G2S point-download inputs.
+    Returns a dict to be used in the CLI call.
+    """
+    print("\nEnter G2S point-download parameters:")
+    date_str = input("  Date (YYYY-MM-DD): ").strip()
+    hour_str = input("  Hour UTC (0-23): ").strip()
+    lat_str = input("  Latitude: ").strip()
+    lon_str = input("  Longitude: ").strip()
+
+    lat = float(lat_str)
+    lon = float(lon_str)
+
+    default_out = Path.home() / "Desktop" / f"g2s_{date_str}_{lat:g}_{lon:g}.json"
+    output_str = input(f"  Output JSON path [e.g. {default_out}]: ").strip()
+    if not output_str:
+        output_str = str(default_out)
+
+    return {
+        "date": date_str,
+        "hour": hour_str,
+        "lat": lat,
+        "lon": lon,
+        "output": output_str,
+    }
+
+def download_g2s_json():
+    """
+    Either use an existing JSON file or interactively download a new one
+    using the existing ncpag2s.py CLI.
     Returns the JSON path that should be processed.
     """
-    if not DOWNLOAD_JSON:
+    if RUN_DOWNLOAD_PROMPT:
+        reply = input("Download a new G2S JSON now? [y/N]: ").strip().lower()
+        do_download = reply in {"y", "yes"}
+    else:
+        do_download = DOWNLOAD_JSON
+
+    if not do_download:
         return Path(JSON_PATH).expanduser().resolve()
 
     cli_path = Path(G2S_CLI_PATH).expanduser().resolve()
-    out_json = Path(DOWNLOADED_JSON_PATH).expanduser().resolve()
-
     if not cli_path.exists():
         raise FileNotFoundError(f"G2S CLI not found: {cli_path}")
+
+    specs = prompt_g2s_download_specs()
+    out_json = Path(specs["output"]).expanduser().resolve()
+    out_json.parent.mkdir(parents=True, exist_ok=True)
 
     cmd = [
         sys.executable,
         str(cli_path),
         "point",
-        "--date", str(G2S_DATE),
-        "--hour", str(G2S_HOUR),
-        "--lat", str(G2S_LAT),
-        "--lon", str(G2S_LON),
+        "--date", specs["date"],
+        "--hour", str(specs["hour"]),
+        "--lat", str(specs["lat"]),
+        "--lon", str(specs["lon"]),
         "--outputformat", "json",
         "--output", str(out_json),
     ]
 
-    print("Downloading G2S JSON...")
+    print("\nDownloading G2S JSON...")
     print(" ".join(cmd))
     subprocess.run(cmd, check=True)
 
@@ -180,13 +210,11 @@ def add_sound_speeds(df: pd.DataFrame, azimuths_deg):
         c_eff = c0 + wind_along_path
 
     With azimuth measured clockwise from East:
-      wind_along = U * sin(alpha) + V * cos(alpha)
+      wind_along = U * cos(alpha) + V * sin(alpha)
     where U is eastward (+E), V is northward (+N)
     """
-    # Compute c0 once
     df["c0_ms"] = np.sqrt(GAMMA_AIR * R_DRY_AIR * df["T_K"].to_numpy())
 
-    # Normalize input to a list (accept float, list, tuple, np array)
     if np.isscalar(azimuths_deg):
         azimuths = [float(azimuths_deg)]
     else:
@@ -194,7 +222,7 @@ def add_sound_speeds(df: pd.DataFrame, azimuths_deg):
 
     for az in azimuths:
         alpha = radians(az)
-        wind_along_path = df["U_ms"] * sin(alpha) + df["V_ms"] * cos(alpha)
+        wind_along_path = df["U_ms"] * cos(alpha) + df["V_ms"] * sin(alpha)
 
         az_str = format_deg_for_filename(az)
         col = f"cEff_ms_alpha{az_str}deg"
