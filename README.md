@@ -13,6 +13,7 @@ The broader goal of this project is to expand the script into a more automated t
 ### Current functionality
 The present script:
 
+- run `profiles_update.py`
 - reads a G2S JSON file
 - extracts atmospheric variables:
   - temperature
