@@ -18,6 +18,7 @@ G2S source code: https://github.com/chetzer-ncpa/ncpag2s-clc
 import json
 from math import cos, sin, radians
 from pathlib import Path
+import subprocess
 
 import numpy as np
 import pandas as pd
@@ -25,6 +26,20 @@ import matplotlib.pyplot as plt
 
 # User config
 JSON_PATH = r"/Users/serinawang/Desktop/g2s_2023-10-18.json"    # Specify G2S file path here
+
+# Or: download a new G2S JSON before processing
+DOWNLOAD_JSON = False
+
+# Path to the existing G2S CLI wrapper
+G2S_CLI_PATH = r"/Users/serinawang/Desktop/GEOS694_FinalProject/ncpag2s.py"
+
+# Download settings used only if DOWNLOAD_JSON = True
+G2S_DATE = "2023-10-18"
+G2S_HOUR = "15"
+G2S_LAT = 37.238
+G2S_LON = -116.159
+DOWNLOADED_JSON_PATH = r"/Users/serinawang/Desktop/g2s_2023-10-18_37-116.json"
+
 
 # Direction of propagation for effective sound speed, measured clockwise from East:
 # One or more azimuths (deg) profiles, clockwise from East: 0=E, 90=N, 180=W, 270=S
