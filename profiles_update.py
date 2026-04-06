@@ -38,7 +38,8 @@ G2S_CLI_PATH = r"/Users/serinawang/Desktop/GEOS694_FinalProject/ncpag2s.py"
 
 # Direction of propagation for effective sound speed, measured clockwise from East:
 # One or more azimuths (deg) profiles, clockwise from East: 0=E, 90=N, 180=W, 270=S
-PROPAGATION_AZIMUTHS_DEG = [0.0, 90.0, 180.0, 270.0]
+DEFAULT_PROPAGATION_AZIMUTHS_DEG = [0.0, 90.0, 180.0, 270.0]
+RUN_AZIMUTH_PROMPT = True
 
 # Googled parameters
 GAMMA_AIR = 1.4          # heat capacity ratio
@@ -75,6 +76,26 @@ def prompt_g2s_download_specs():
         "lon": lon,
         "output": output_str,
     }
+
+def prompt_propagation_azimuths():
+    """
+    Prompt user for one or more propagation azimuths in degrees.
+    Returns a list of floats in the range [0, 360).
+    """
+    default_str = ", ".join(f"{az:g}" for az in DEFAULT_PROPAGATION_AZIMUTHS_DEG)
+    reply = input(
+        f"Enter propagation azimuth(s) in degrees, comma-separated [{default_str}]: "
+    ).strip()
+
+    if not reply:
+        return DEFAULT_PROPAGATION_AZIMUTHS_DEG.copy()
+
+    azimuths = []
+    for item in reply.split(","):
+        az = float(item.strip()) % 360.0
+        azimuths.append(az)
+
+    return azimuths
 
 def download_g2s_json():
     """
@@ -303,7 +324,12 @@ def main():
 
     g2s_obj = read_g2s_json(json_path)
     profile_df = build_profile_dataframe(g2s_obj)
-    profile_df = add_sound_speeds(profile_df, PROPAGATION_AZIMUTHS_DEG)
+    if RUN_AZIMUTH_PROMPT:
+        propagation_azimuths_deg = prompt_propagation_azimuths()
+    else:
+        propagation_azimuths_deg = DEFAULT_PROPAGATION_AZIMUTHS_DEG
+
+    profile_df = add_sound_speeds(profile_df, propagation_azimuths_deg)
 
     # Output paths
     stem = json_path.with_suffix("")  # removes .json
@@ -333,12 +359,7 @@ def main():
         )
 
     # Effective sound speed plots for each azimuth
-    if np.isscalar(PROPAGATION_AZIMUTHS_DEG):
-        azimuths = [float(PROPAGATION_AZIMUTHS_DEG)]
-    else:
-        azimuths = [float(a) for a in PROPAGATION_AZIMUTHS_DEG]
-
-    for az in azimuths:
+    for az in propagation_azimuths_deg:
         az_str = format_deg_for_filename(az)
         col = f"cEff_ms_alpha{az_str}deg"
         plot_profile(
