@@ -43,15 +43,15 @@ In infrasound propagation studies, the **effective sound speed** is often used t
 
 The effective sound speed is defined as:
 
-\[
+$$
 c_{\mathrm{eff}} = c_0 + \vec{u} \cdot \hat{s}
-\]
+$$
 
 where:
 
-- \( c_0 \) is the adiabatic sound speed
-- \( \vec{u} \) is the wind vector
-- \( \hat{s} \) is the propagation-direction unit vector
+- $c_0$ is the adiabatic sound speed
+- $\vec{u}$ is the wind vector
+- $\hat{s}$ is the propagation-direction unit vector
 
 A potential **refraction point** is of interest when the effective sound speed aloft exceeds the effective sound speed at the ground surface. In other words, this can help indicate if an atmospheric structure is favorable for upward bending reversal or ducted infrasound propagation.
 
