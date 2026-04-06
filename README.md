@@ -37,6 +37,12 @@ The next development stage is intended to:
 - automatically evaluate effective sound speed for **all azimuths from 0° to 360°**
 - determine whether any azimuth exhibits a potential **refraction point**
 
+## Class Requierments
+### Project Task #1
+I will be implimenting classes to update observational azimuth, and will likely also aim for parallel/concurrency to speed up the 0-360° azimuth sweep.
+
+### Project Task #2
+I have implimented input systems (propting the user in terminal), and will impliment tests for normal functionality, and edge cases.
 
 ## Scientific Background
 
