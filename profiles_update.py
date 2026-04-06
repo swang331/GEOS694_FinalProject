@@ -19,6 +19,7 @@ import json
 from math import cos, sin, radians
 from pathlib import Path
 import subprocess
+import sys
 
 import numpy as np
 import pandas as pd
@@ -28,9 +29,9 @@ import matplotlib.pyplot as plt
 JSON_PATH = r"/Users/serinawang/Desktop/g2s_2023-10-18.json"    # Specify G2S file path here
 
 # Or: download a new G2S JSON before processing
-DOWNLOAD_JSON = False
+DOWNLOAD_JSON = True
 
-# Path to the existing G2S CLI wrapper
+# Path to the existing G2S wrapper
 G2S_CLI_PATH = r"/Users/serinawang/Desktop/GEOS694_FinalProject/ncpag2s.py"
 
 # Download settings used only if DOWNLOAD_JSON = True
@@ -53,6 +54,41 @@ R_DRY_AIR = 287.0        # J/(kg*K)
 PLOT_MAX_HEIGHT_M = 100000
 SHOW_PLOTS = True
 
+
+def download_g2s_json():    # If not reading from an existing file
+    """
+    Optionally download a G2S JSON file using the existing ncpag2s.py CLI.
+    Returns the JSON path that should be processed.
+    """
+    if not DOWNLOAD_JSON:
+        return Path(JSON_PATH).expanduser().resolve()
+
+    cli_path = Path(G2S_CLI_PATH).expanduser().resolve()
+    out_json = Path(DOWNLOADED_JSON_PATH).expanduser().resolve()
+
+    if not cli_path.exists():
+        raise FileNotFoundError(f"G2S CLI not found: {cli_path}")
+
+    cmd = [
+        sys.executable,
+        str(cli_path),
+        "point",
+        "--date", str(G2S_DATE),
+        "--hour", str(G2S_HOUR),
+        "--lat", str(G2S_LAT),
+        "--lon", str(G2S_LON),
+        "--outputformat", "json",
+        "--output", str(out_json),
+    ]
+
+    print("Downloading G2S JSON...")
+    print(" ".join(cmd))
+    subprocess.run(cmd, check=True)
+
+    if not out_json.exists():
+        raise FileNotFoundError(f"Expected downloaded JSON not found: {out_json}")
+
+    return out_json
 
 def read_g2s_json(json_path: Path):
     """
@@ -233,7 +269,7 @@ def format_deg_for_filename(deg: float):
 
 
 def main():
-    json_path = Path(JSON_PATH).expanduser().resolve()
+    json_path = download_g2s_json()
     if not json_path.exists():
         raise FileNotFoundError(f"Input not found: {json_path}")
 
