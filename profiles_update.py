@@ -77,6 +77,7 @@ def prompt_g2s_download_specs():
         "output": output_str,
     }
 
+
 def prompt_propagation_azimuths():
     """
     Prompt user for one or more propagation azimuths in degrees.
@@ -96,6 +97,7 @@ def prompt_propagation_azimuths():
         azimuths.append(az)
 
     return azimuths
+
 
 def download_g2s_json():
     """
@@ -140,6 +142,7 @@ def download_g2s_json():
         raise FileNotFoundError(f"Expected downloaded JSON not found: {out_json}")
 
     return out_json
+
 
 def read_g2s_json(json_path: Path):
     """
