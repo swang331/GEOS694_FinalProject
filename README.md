@@ -30,7 +30,7 @@ cd GEOS694_FinalProject
 conda activate g2s_profiles
 ```
 
-### Current functionality
+## Current functionality
 The present script:
 
 
