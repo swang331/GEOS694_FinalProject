@@ -45,7 +45,7 @@ The next development stage is intended to:
 - expand the use of **classes** to support easier updating and management of the **observational azimuth**
 - determine whether any azimuth exhibits a potential **refraction point**
 - add refraction diagnostics and summary outputs
-- implement tests for normal functionality and edge cases
+- implement tests to ensure functionality and edge cases
 
 ## Class Requirements
 ### Project Task #1
