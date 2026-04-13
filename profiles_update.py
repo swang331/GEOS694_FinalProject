@@ -65,7 +65,8 @@ class AzimuthConfig:
         """
         default_str = ", ".join(f"{az:g}" for az in self.azimuths_deg)
         reply = input(
-            f"Enter propagation azimuth(s) in degrees, comma-separated [{default_str}]: "
+            f"Enter propagation azimuth(s) in degrees, comma-separated "
+            f"[e.g. 0, 90, 180, 270 | default: {default_str}]: "
         ).strip()
 
         if reply:
@@ -86,16 +87,18 @@ def prompt_g2s_download_specs():
     Returns a dict to be used in the CLI call.
     """
     print("\nEnter G2S point-download parameters:")
-    date_str = input("  Date (YYYY-MM-DD): ").strip()
-    hour_str = input("  Hour UTC (0-23): ").strip()
-    lat_str = input("  Latitude: ").strip()
-    lon_str = input("  Longitude: ").strip()
+    date_str = input("  Date (YYYY-MM-DD) [e.g. 2023-10-18]: ").strip()
+    hour_str = input("  Hour UTC (0-23) [e.g. 15]: ").strip()
+    lat_str = input("  Latitude [e.g. 37.238]: ").strip()
+    lon_str = input("  Longitude [e.g. -116.159]: ").strip()
 
     lat = float(lat_str)
     lon = float(lon_str)
 
     default_out = Path.home() / "Desktop" / f"g2s_{date_str}_{lat:g}_{lon:g}.json"
-    output_str = input(f"  Output JSON path [e.g. {default_out}]: ").strip()
+    output_str = input(
+        f"  Output JSON path [e.g. {default_out} | press Enter for default Desktop]: "
+    ).strip()
     if not output_str:
         output_str = str(default_out)
 
@@ -115,7 +118,7 @@ def download_g2s_json():
     Returns the JSON path that should be processed.
     """
     if RUN_DOWNLOAD_PROMPT:
-        reply = input("Download a new G2S JSON now? [y/N]: ").strip().lower()
+        reply = input("Download a new G2S JSON now? [y/n]: ").strip().lower()
         do_download = reply in {"y", "yes"}
     else:
         do_download = DOWNLOAD_JSON
