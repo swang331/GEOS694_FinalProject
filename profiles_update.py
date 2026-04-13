@@ -50,6 +50,36 @@ PLOT_MAX_HEIGHT_M = 100000
 SHOW_PLOTS = True
 
 
+class AzimuthConfig:
+    """
+    Store and manage propagation azimuths for effective sound speed calculations.
+    """
+    def __init__(self, azimuths_deg=None):
+        if azimuths_deg is None:
+            azimuths_deg = DEFAULT_PROPAGATION_AZIMUTHS_DEG.copy()
+        self.azimuths_deg = [float(az) % 360.0 for az in azimuths_deg]
+
+    def prompt_user(self):
+        """
+        Prompt user for one or more azimuths and update the stored list.
+        """
+        default_str = ", ".join(f"{az:g}" for az in self.azimuths_deg)
+        reply = input(
+            f"Enter propagation azimuth(s) in degrees, comma-separated [{default_str}]: "
+        ).strip()
+
+        if reply:
+            self.azimuths_deg = [float(item.strip()) % 360.0 for item in reply.split(",")]
+
+        return self.azimuths_deg
+
+    def get_list(self):
+        """
+        Return azimuths as a list of floats.
+        """
+        return self.azimuths_deg.copy()
+
+
 def prompt_g2s_download_specs():
     """
     Prompt user for G2S point-download inputs.
@@ -76,27 +106,6 @@ def prompt_g2s_download_specs():
         "lon": lon,
         "output": output_str,
     }
-
-
-def prompt_propagation_azimuths():
-    """
-    Prompt user for one or more propagation azimuths in degrees.
-    Returns a list of floats in the range [0, 360).
-    """
-    default_str = ", ".join(f"{az:g}" for az in DEFAULT_PROPAGATION_AZIMUTHS_DEG)
-    reply = input(
-        f"Enter propagation azimuth(s) in degrees, comma-separated [{default_str}]: "
-    ).strip()
-
-    if not reply:
-        return DEFAULT_PROPAGATION_AZIMUTHS_DEG.copy()
-
-    azimuths = []
-    for item in reply.split(","):
-        az = float(item.strip()) % 360.0
-        azimuths.append(az)
-
-    return azimuths
 
 
 def download_g2s_json():
@@ -142,7 +151,6 @@ def download_g2s_json():
         raise FileNotFoundError(f"Expected downloaded JSON not found: {out_json}")
 
     return out_json
-
 
 def read_g2s_json(json_path: Path):
     """
@@ -327,11 +335,12 @@ def main():
 
     g2s_obj = read_g2s_json(json_path)
     profile_df = build_profile_dataframe(g2s_obj)
-    if RUN_AZIMUTH_PROMPT:
-        propagation_azimuths_deg = prompt_propagation_azimuths()
-    else:
-        propagation_azimuths_deg = DEFAULT_PROPAGATION_AZIMUTHS_DEG
+    azimuth_config = AzimuthConfig()
 
+    if RUN_AZIMUTH_PROMPT:
+        azimuth_config.prompt_user()
+
+    propagation_azimuths_deg = azimuth_config.get_list()
     profile_df = add_sound_speeds(profile_df, propagation_azimuths_deg)
 
     # Output paths
