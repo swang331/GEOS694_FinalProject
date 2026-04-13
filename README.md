@@ -11,8 +11,29 @@ The broader goal of this project is to expand the script into a more automated t
 - identify possible **infrasound refraction azimuths**
 
 
+## Instillation
+
+We recommend you install this package into a new
+[conda](https://docs.conda.io/projects/conda/en/latest/index.html) environment.
+(Please install [Anaconda](https://www.anaconda.com/products/individual) or
+[Miniconda](https://docs.conda.io/en/latest/miniconda.html) before proceeding.)
+The environment must contain all of the packages listed in the
+[Dependencies](#dependencies) section. 
+
+The provided [`environment.yml`]
+(https://github.com/swang331/GEOS694_FinalProject/blob/main/enviroments.yml)
+file contains all neccesary Python packages. 
+
+Run the lines below in terminal to clone the repository:
+```
+git clone https://github.com/swang331/GEOS694_FinalProject.git
+cd GEOS694_FinalProject
+conda activate g2s_profiles
+```
+
 ### Current functionality
 The present script:
+
 
 - runs `profiles_update.py`
 - allows the user to either:
