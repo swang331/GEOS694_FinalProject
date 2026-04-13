@@ -376,7 +376,7 @@ def main():
     json_path = download_g2s_json()
     if not json_path.exists():
         raise FileNotFoundError(f"Input not found: {json_path}")
-[0.0, 90.0, 180.0, 270.0]
+    propagation_azimuths_deg = [0.0, 90.0, 180.0, 270.0]
     g2s_obj = read_g2s_json(json_path)
     profile_df = build_profile_dataframe(g2s_obj)
 
