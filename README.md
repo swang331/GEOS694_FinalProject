@@ -20,8 +20,7 @@ We recommend you install this package into a new
 The environment must contain all of the packages listed in the
 [Dependencies](#dependencies) section. 
 
-The provided [`environment.yml`]
-(https://github.com/swang331/GEOS694_FinalProject/blob/main/enviroments.yml)
+The provided [`environment.yml`](https://github.com/swang331/GEOS694_FinalProject/blob/main/enviroments.yml)
 file contains all neccesary Python packages. 
 
 Run the lines below in terminal to clone the repository:
