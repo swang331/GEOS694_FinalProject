@@ -16,7 +16,7 @@ G2S source code: https://github.com/chetzer-ncpa/ncpag2s-clc
 """
 
 import json
-from math import cos, sin, radians
+from math import cos, radians
 from pathlib import Path
 import subprocess
 import sys
@@ -26,7 +26,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 # User config
-JSON_PATH = r"/Users/serinawang/Desktop/g2s_2023-10-18.json"    # Specify G2S file path here
+JSON_PATH = r"/Users/serinawang/Desktop/g2s_2023-10-18.json"  # Specify G2S file path here
 
 # OR: download JSON file in script
 DOWNLOAD_JSON = False          # Default behavior if not prompting
@@ -34,7 +34,6 @@ RUN_DOWNLOAD_PROMPT = True     # Ask at runtime whether to download a new JSON
 
 # Path to the existing G2S wrapper
 G2S_CLI_PATH = r"/Users/serinawang/Desktop/GEOS694_FinalProject/ncpag2s.py"
-
 
 # Direction of propagation for effective sound speed, measured clockwise from East:
 # One or more azimuths (deg) profiles, clockwise from East: 0=E, 90=N, 180=W, 270=S
@@ -48,6 +47,8 @@ R_DRY_AIR = 287.0        # J/(kg*K)
 # Plot control
 PLOT_MAX_HEIGHT_M = 100000
 SHOW_PLOTS = True
+SAVE_PLOTS = True
+RUN_PLOT_PROMPT = True
 
 
 class AzimuthConfig:
@@ -61,16 +62,33 @@ class AzimuthConfig:
 
     def prompt_user(self):
         """
-        Prompt user for one or more azimuths and update the stored list.
+        Prompt user for propagation azimuth choices and update the stored list.
+        Options:
+          - comma-separated azimuths
+          - full 360 sweep
         """
         default_str = ", ".join(f"{az:g}" for az in self.azimuths_deg)
-        reply = input(
+
+        mode_reply = input(
+            "Choose azimuth mode "
+            '[e.g. type "list" for specific azimuths, or type "sweep" for 0–360° sweep]]: '
+        ).strip().lower()
+
+        if not mode_reply:
+            mode_reply = "list"
+
+        if mode_reply == "sweep":
+            print("Running full 360° sweep at 1° spacing. This may create many columns and plots.")
+            self.azimuths_deg = list(np.arange(0.0, 360.0, 1.0))
+            return self.azimuths_deg
+
+        az_reply = input(
             f"Enter propagation azimuth(s) in degrees, comma-separated "
             f"[e.g. 0, 90, 180, 270 | default: {default_str}]: "
         ).strip()
 
-        if reply:
-            self.azimuths_deg = [float(item.strip()) % 360.0 for item in reply.split(",")]
+        if az_reply:
+            self.azimuths_deg = [float(item.strip()) % 360.0 for item in az_reply.split(",")]
 
         return self.azimuths_deg
 
@@ -109,6 +127,31 @@ def prompt_g2s_download_specs():
         "lon": lon,
         "output": output_str,
     }
+
+
+def prompt_plot_behavior():
+    """
+    Prompt user whether to show plots and/or save plots.
+    Returns:
+        show_plots, save_plots
+    """
+    show_reply = input(
+        "Show plots interactively? [y/n]: "
+    ).strip().lower()
+    show_plots = show_reply in {"y", "yes"}
+
+    if show_plots:
+        save_reply = input(
+            "Also save plots to the output directory? [y/n]: "
+        ).strip().lower()
+        save_plots = save_reply in {"y", "yes"}
+    else:
+        save_reply = input(
+            "Do you want to save the produced plots to the output directory? [y/n]: "
+        ).strip().lower()
+        save_plots = save_reply in {"y", "yes"}
+
+    return show_plots, save_plots
 
 
 def download_g2s_json():
@@ -155,6 +198,7 @@ def download_g2s_json():
 
     return out_json
 
+
 def read_g2s_json(json_path: Path):
     """
     Read in G2S JSON file
@@ -200,13 +244,11 @@ def build_profile_dataframe(g2s_obj: dict):
     """
     data = g2s_obj["data"]
 
-    required_params = ["Z0", "Z", "T", "U", "V", "R", "P"]  # Catch if any are missing from the JSON
+    required_params = ["Z0", "Z", "T", "U", "V", "R", "P"]
     missing = [k for k in required_params if k not in data]
     if missing:
         raise KeyError(f"Missing required parameters in JSON: {missing}")
 
-    # Z0 is a scalar (km)
-    # Z is a profile (km AGL)
     ref_height_msl_km = float(data["Z0"]["values"][0])
     height_agl_km = np.asarray(data["Z"]["values"], dtype=float)
 
@@ -222,14 +264,10 @@ def build_profile_dataframe(g2s_obj: dict):
         }
     )
 
-    # Height conversions
     df["z_agl_m"] = df["z_agl_km"] * 1000.0
     df["z_msl_m"] = df["z_msl_km"] * 1000.0
 
-    # Unit conversions
-    # 1 g/cm^3 = 1000 kg/m^3
     df["rho_kg_m3"] = df["rho_g_cm3"] * 1000.0
-    # 1 mbar = 100 Pa
     df["P_Pa"] = df["P_mbar"] * 100.0
 
     return df
@@ -257,7 +295,7 @@ def add_sound_speeds(df: pd.DataFrame, azimuths_deg):
 
     for az in azimuths:
         alpha = radians(az)
-        wind_along_path = df["U_ms"] * cos(alpha) + df["V_ms"] * sin(alpha)
+        wind_along_path = df["U_ms"] * cos(alpha) + df["V_ms"] * np.sin(alpha)
 
         az_str = format_deg_for_filename(az)
         col = f"cEff_ms_alpha{az_str}deg"
@@ -286,7 +324,6 @@ def write_profiles_csv(df: pd.DataFrame, out_csv: Path):
         "c0_ms",
     ]
 
-    # Pick up all effective sound speed columns (sorted for stable output)
     c_eff_cols = sorted([c for c in df.columns if c.startswith("cEff_ms_alpha")])
 
     df.to_csv(
@@ -297,16 +334,17 @@ def write_profiles_csv(df: pd.DataFrame, out_csv: Path):
     )
 
 
-def plot_profile(   # Takes care of repetative plotting
+def plot_profile(
     x_values: np.ndarray,
     z_agl_m: np.ndarray,
     xlabel: str,
     out_png: Path,
     ymax_m: float = PLOT_MAX_HEIGHT_M,
     show: bool = SHOW_PLOTS,
+    save: bool = SAVE_PLOTS,
 ):
     """
-    Plot x vs height (AGL, meters) and save to PNG
+    Plot x vs height (AGL, meters), optionally save to PNG and/or show interactively.
     """
     plt.figure(figsize=(4, 6))
     plt.plot(x_values, z_agl_m)
@@ -315,7 +353,10 @@ def plot_profile(   # Takes care of repetative plotting
     plt.grid(True, linestyle=":", linewidth=0.6)
     plt.ylim(0, ymax_m)
     plt.tight_layout()
-    plt.savefig(out_png, dpi=200)
+
+    if save:
+        plt.savefig(out_png, dpi=200)
+
     if show:
         plt.show()
     else:
@@ -335,34 +376,41 @@ def main():
     json_path = download_g2s_json()
     if not json_path.exists():
         raise FileNotFoundError(f"Input not found: {json_path}")
-
+[0.0, 90.0, 180.0, 270.0]
     g2s_obj = read_g2s_json(json_path)
     profile_df = build_profile_dataframe(g2s_obj)
-    azimuth_config = AzimuthConfig()
 
+    azimuth_config = AzimuthConfig()
     if RUN_AZIMUTH_PROMPT:
         azimuth_config.prompt_user()
 
     propagation_azimuths_deg = azimuth_config.get_list()
     profile_df = add_sound_speeds(profile_df, propagation_azimuths_deg)
 
+    if RUN_PLOT_PROMPT:
+        show_plots, save_plots = prompt_plot_behavior()
+    else:
+        show_plots = SHOW_PLOTS
+        save_plots = SAVE_PLOTS
+
+    if len(propagation_azimuths_deg) > 20 and show_plots:
+        print("Warning: many azimuths selected; interactive plotting may open many figure windows.")
+
     # Output paths
-    stem = json_path.with_suffix("")  # removes .json
+    stem = json_path.with_suffix("")
     out_dir = stem.parent
 
     csv_path = out_dir / f"{stem.name}_profiles.csv"
     write_profiles_csv(profile_df, csv_path)
 
-    # Plotting (reduced repetition)
     z_m = profile_df["z_agl_m"].to_numpy()
 
-    # Each entry: (column_name, x_label, filename_suffix)
     plot_specs = [
-        ("T_K",       "Temperature (K)",              "_T_profile.png"),
-        ("U_ms",      "Zonal wind U (m/s, +East)",     "_U_profile.png"),
-        ("V_ms",      "Meridional wind V (m/s, +North)","_V_profile.png"),
-        ("rho_kg_m3", "Density (kg/m³)",              "_rho_profile.png"),
-        ("P_Pa",      "Pressure (Pa)",                "_P_profile.png"),
+        ("T_K", "Temperature (K)", "_T_profile.png"),
+        ("U_ms", "Zonal wind U (m/s, +East)", "_U_profile.png"),
+        ("V_ms", "Meridional wind V (m/s, +North)", "_V_profile.png"),
+        ("rho_kg_m3", "Density (kg/m³)", "_rho_profile.png"),
+        ("P_Pa", "Pressure (Pa)", "_P_profile.png"),
     ]
 
     for col, xlab, suffix in plot_specs:
@@ -371,9 +419,10 @@ def main():
             z_m,
             xlab,
             out_dir / f"{stem.name}{suffix}",
+            show=show_plots,
+            save=save_plots,
         )
 
-    # Effective sound speed plots for each azimuth
     for az in propagation_azimuths_deg:
         az_str = format_deg_for_filename(az)
         col = f"cEff_ms_alpha{az_str}deg"
@@ -382,16 +431,17 @@ def main():
             z_m,
             f"c_eff (m/s) @ azimuth={az_str}°",
             out_dir / f"{stem.name}_cEff_alpha{az_str}deg_profile.png",
+            show=show_plots,
+            save=save_plots,
         )
 
-    # Small terminal summary
     meta = g2s_obj.get("meta", {})
     time_str = meta.get("time", {}).get("datetime", "unknown time")
     loc = meta.get("location", {})
+
     print(f"Wrote: {csv_path}")
     print(f"Time: {time_str}")
     print(f"Location: lat {loc.get('latitude')}, lon {loc.get('longitude')}")
-    # print(profile_df[["z_agl_m", "c0_ms", "cEff_ms"]].describe())   # Error, need fixing for multiple azimuths
 
 
 if __name__ == "__main__":
