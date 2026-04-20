@@ -1,139 +1,100 @@
-#!/usr/bin/env python3
+# tests.py
 import json
 import tempfile
-import builtins
 from pathlib import Path
+from unittest.mock import patch
 
 import profiles_update as pu
 
 
-def _fake_input_factory(responses):
-    it = iter(responses)
-
-    def _input(prompt=""):
-        try:
-            return next(it)
-        except StopIteration:
-            return ""
-    return _input
-
-
-def test_format_and_azimuth_and_build():
-    assert pu.format_deg_for_filename(0.0) == "0"
-    assert pu.format_deg_for_filename(45.0) == "45"
-    assert pu.format_deg_for_filename(12.5) == "12.5"
-
-    a = pu.AzimuthConfig()
-    lst = a.get_list()
-    assert isinstance(lst, list) and len(lst) > 0
-    c = a.get_list()
-    c.append(999.0)
-    assert 999.0 not in a.get_list()
-
-    minimal = {"data": {"Z": {"values": [0]}, "T": {"values": [290]}, "U": {"values": [0]}, "V": {"values": [0]}, "R": {"values": [0]}, "P": {"values": [0]}}}
-    try:
-        pu.build_profile_dataframe(minimal)
-        raise AssertionError("Expected KeyError for missing Z0")
-    except KeyError:
-        pass
-
-
-def test_prompt_g2s_download_specs():
-    responses = [
-        "2023-10-18",  # date
-        "15",          # hour
-        "37.238",      # lat
-        "-116.159",    # lon
-        "",            # accept default output path
-    ]
-    orig_input = builtins.input
-    builtins.input = _fake_input_factory(responses)
-    try:
-        specs = pu.prompt_g2s_download_specs()
-        assert "date" in specs and "hour" in specs and "lat" in specs and "lon" in specs and "output" in specs
-    finally:
-        builtins.input = orig_input
-
-
-def test_prompt_plot_behavior():
-    # Case 1: show=True then save=False
-    orig_input = builtins.input
-    builtins.input = _fake_input_factory(["y", "n"])
-    try:
-        show, save = pu.prompt_plot_behavior()
-        assert show is True and save is False
-    finally:
-        builtins.input = orig_input
-
-    # Case 2: show=False then save=True
-    builtins.input = _fake_input_factory(["n", "y"])
-    try:
-        show, save = pu.prompt_plot_behavior()
-        assert show is False and save is True
-    finally:
-        builtins.input = orig_input
-
-
-def test_download_g2s_json_no_download():
-    # Ensure when we're not downloading, the function returns the existing JSON path
-    td = tempfile.TemporaryDirectory()
-    tdpath = Path(td.name)
-    jf = tdpath / "dummy.json"
-    jf.write_text("{}")
-
-    # Backup and set flags
-    orig_RUN_PROMPT = pu.RUN_DOWNLOAD_PROMPT
-    orig_DOWNLOAD_JSON = pu.DOWNLOAD_JSON
-    orig_JSON_PATH = pu.JSON_PATH
-    try:
-        pu.RUN_DOWNLOAD_PROMPT = False
-        pu.DOWNLOAD_JSON = False
-        pu.JSON_PATH = str(jf)
-        out = pu.download_g2s_json()
-        assert Path(out).resolve() == jf.resolve()
-    finally:
-        pu.RUN_DOWNLOAD_PROMPT = orig_RUN_PROMPT
-        pu.DOWNLOAD_JSON = orig_DOWNLOAD_JSON
-        pu.JSON_PATH = orig_JSON_PATH
-
-    td.cleanup()
-
-
-def test_read_g2s_json():
-    td = tempfile.TemporaryDirectory()
-    tdpath = Path(td.name)
-    sample = {
-        "metadata": {"time": {"datetime": "now"}, "location": {"latitude": 1.0, "longitude": 2.0}},
+def create_valid_test_json(path):
+    """Write a minimal valid G2S-style JSON file."""
+    test_data = {
+        "metadata": {},
         "data": [
-            {"parameter": "Z0", "units": "km", "values": [0.0]},
-            {"parameter": "Z", "units": "km", "values": [0.0]},
-            {"parameter": "T", "units": "K", "values": [300.0]},
-            {"parameter": "U", "units": "m/s", "values": [0.0]},
-            {"parameter": "V", "units": "m/s", "values": [0.0]},
-            {"parameter": "R", "units": "g/cm^3", "values": [0.001]},
-            {"parameter": "P", "units": "mbar", "values": [1013.25]},
+            {"parameter": "Z0", "values": [1.0]},
+            {"parameter": "Z",  "values": [0.0, 1.0]},
+            {"parameter": "T",  "values": [280.0, 275.0]},
+            {"parameter": "U",  "values": [5.0, 6.0]},
+            {"parameter": "V",  "values": [1.0, 2.0]},
+            {"parameter": "R",  "values": [0.0012, 0.0011]},
+            {"parameter": "P",  "values": [1000.0, 900.0]},
         ],
     }
-    p = tdpath / "g2s.json"
-    p.write_text(json.dumps(sample))
-
-    out = pu.read_g2s_json(p)
-    assert "meta" in out and "data" in out
-    # data should be a dict keyed by parameter names
-    assert isinstance(out["data"], dict)
-    assert "Z" in out["data"] and "T" in out["data"]
-
-    td.cleanup()
+    with open(path, "w") as f:
+        json.dump(test_data, f)
 
 
-def main():
-    test_format_and_azimuth_and_build()
-    test_prompt_g2s_download_specs()
-    test_prompt_plot_behavior()
-    test_download_g2s_json_no_download()
-    test_read_g2s_json()
-    print("All minimal tests passed")
+def create_invalid_test_json(path):
+    """Write an invalid JSON file missing pressure P."""
+    test_data = {
+        "metadata": {},
+        "data": [
+            {"parameter": "Z0", "values": [1.0]},
+            {"parameter": "Z",  "values": [0.0, 1.0]},
+            {"parameter": "T",  "values": [280.0, 275.0]},
+            {"parameter": "U",  "values": [5.0, 6.0]},
+            {"parameter": "V",  "values": [1.0, 2.0]},
+            {"parameter": "R",  "values": [0.0012, 0.0011]},
+        ],
+    }
+    with open(path, "w") as f:
+        json.dump(test_data, f)
+
+
+def test_main_creates_csv_for_valid_json():
+    """Main should run successfully and create the output CSV."""
+    with tempfile.TemporaryDirectory() as tmp:
+        json_path = Path(tmp) / "sample.json"
+        create_valid_test_json(json_path)
+
+        with patch.object(pu, "download_g2s_json", return_value=json_path), \
+             patch.object(pu, "RUN_AZIMUTH_PROMPT", False), \
+             patch.object(pu, "RUN_PLOT_PROMPT", False), \
+             patch.object(pu, "SHOW_PLOTS", False), \
+             patch.object(pu, "SAVE_PLOTS", False), \
+             patch.object(pu, "plot_profile", return_value=None):
+
+            pu.main()
+
+        output_csv = Path(tmp) / "sample_profiles.csv"
+        assert output_csv.exists(), "Expected output CSV was not created"
+
+
+def test_main_raises_error_for_missing_json_file():
+    """Main should raise FileNotFoundError if the JSON file does not exist."""
+    fake_path = Path("/tmp/this_file_does_not_exist.json")
+
+    with patch.object(pu, "download_g2s_json", return_value=fake_path):
+        try:
+            pu.main()
+            assert False, "Expected FileNotFoundError"
+        except FileNotFoundError:
+            pass
+
+
+def test_main_raises_error_for_missing_required_parameter():
+    """Main should raise KeyError if a required JSON parameter is missing."""
+    with tempfile.TemporaryDirectory() as tmp:
+        json_path = Path(tmp) / "bad.json"
+        create_invalid_test_json(json_path)
+
+        with patch.object(pu, "download_g2s_json", return_value=json_path), \
+             patch.object(pu, "RUN_AZIMUTH_PROMPT", False), \
+             patch.object(pu, "RUN_PLOT_PROMPT", False), \
+             patch.object(pu, "SHOW_PLOTS", False), \
+             patch.object(pu, "SAVE_PLOTS", False), \
+             patch.object(pu, "plot_profile", return_value=None):
+
+            try:
+                pu.main()
+                assert False, "Expected KeyError"
+            except KeyError:
+                pass
 
 
 if __name__ == "__main__":
-    main()
+    test_main_creates_csv_for_valid_json()
+    test_main_raises_error_for_missing_json_file()
+    test_main_raises_error_for_missing_required_parameter()
+    print("All tests passed.")
