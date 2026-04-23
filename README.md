@@ -29,6 +29,7 @@ Run the lines below in terminal to clone the repository:
 ```
 git clone https://github.com/swang331/GEOS694_FinalProject.git
 cd GEOS694_FinalProject
+conda env create -f environment.yml
 conda activate g2s_profiles
 ```
 
