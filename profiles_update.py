@@ -26,7 +26,8 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 # User config
-JSON_PATH = r"/Users/serinawang/Desktop/g2s_2023-10-18.json"  # Specify G2S file path here
+# Specify G2S file path here
+JSON_PATH = "/Users/serinawang/Desktop/GEOS694_FinalProject/g2s_2023-10-18_37.234_-116.159.json"
 
 # OR: download JSON file in script
 DOWNLOAD_JSON = False          # Default behavior if not prompting
@@ -35,8 +36,8 @@ RUN_DOWNLOAD_PROMPT = True     # Ask at runtime whether to download a new JSON
 # Path to the existing G2S wrapper
 G2S_CLI_PATH = r"/Users/serinawang/Desktop/GEOS694_FinalProject/ncpag2s.py"
 
-# Direction of propagation for effective sound speed, measured clockwise from East:
-# One or more azimuths (deg) profiles, clockwise from East: 0=E, 90=N, 180=W, 270=S
+# Direction of propagation for effective sound speed, measured clockwise from North:
+# One or more azimuths (deg): 0=N, 90=E, 180=S, 270=W
 DEFAULT_PROPAGATION_AZIMUTHS_DEG = [0.0, 90.0, 180.0, 270.0]
 RUN_AZIMUTH_PROMPT = True
 
@@ -67,15 +68,15 @@ class AzimuthConfig:
     def prompt_user(self):
         """
         Prompt user for propagation azimuth choices and update the stored list.
+
         Options:
-          - comma-separated azimuths
-          - full 360 sweep
+        - list: user enters comma-separated azimuths
+        - sweep: run a full 0–359° sweep
         """
         default_str = ", ".join(f"{az:g}" for az in self.azimuths_deg)
 
         mode_reply = input(
-            "Choose azimuth mode "
-            '[e.g. type "list" for specific azimuths, or type "sweep" for 0–360° sweep]]: '
+            'Choose azimuth input mode [type "list" or "sweep"; e.g. sweep]: '
         ).strip().lower()
 
         if not mode_reply:
@@ -87,8 +88,8 @@ class AzimuthConfig:
             return self.azimuths_deg
 
         az_reply = input(
-            f"Enter propagation azimuth(s) in degrees, comma-separated "
-            f"[e.g. 0, 90, 180, 270 | default: {default_str}]: "
+            f"Enter propagation azimuth(s) in degrees clockwise from North "
+            f'[e.g. 0, 90, 180, 270 | press Enter for default: {default_str}]: '
         ).strip()
 
         if az_reply:
@@ -119,7 +120,7 @@ def prompt_g2s_download_specs():
 
     default_out = Path.home() / "Desktop" / f"g2s_{date_str}_{lat:g}_{lon:g}.json"
     output_str = input(
-        f"  Output JSON path [e.g. {default_out} | press Enter for default Desktop]: "
+        f"  Output JSON path [e.g. {default_out} OR press Enter for default Desktop] \n  Remember directory should include JSON file name: "
     ).strip()
     if not output_str:
         output_str = str(default_out)
@@ -308,9 +309,22 @@ def add_sound_speeds(df: pd.DataFrame, azimuths_deg):
     Effective sound speed:
         c_eff = c0 + wind_along_path
 
-    With azimuth measured clockwise from East:
-      wind_along = U * cos(alpha) + V * sin(alpha)
-    where U is eastward (+E), V is northward (+N)
+    With azimuth measured clockwise from North:
+      - 0° = North
+      - 90° = East
+      - 180° = South
+      - 270° = West
+
+    The propagation-direction unit vector is:
+      s_hat = [sin(alpha), cos(alpha)]
+    where components are [East, North].
+
+    Therefore:
+      wind_along = U * sin(alpha) + V * cos(alpha)
+
+    where:
+      U is eastward (+E)
+      V is northward (+N)
     """
     df["c0_ms"] = np.sqrt(GAMMA_AIR * R_DRY_AIR * df["T_K"].to_numpy())
 
@@ -321,7 +335,7 @@ def add_sound_speeds(df: pd.DataFrame, azimuths_deg):
 
     for az in azimuths:
         alpha = radians(az)
-        wind_along_path = df["U_ms"] * cos(alpha) + df["V_ms"] * np.sin(alpha)
+        wind_along_path = df["U_ms"] * np.sin(alpha) + df["V_ms"] * np.cos(alpha)
 
         az_str = format_deg_for_filename(az)
         col = f"cEff_ms_alpha{az_str}deg"
@@ -330,16 +344,25 @@ def add_sound_speeds(df: pd.DataFrame, azimuths_deg):
     return df
 
 
-def find_refraction_points(df: pd.DataFrame, azimuths_deg):
+def find_refraction_points(df: pd.DataFrame, azimuths_deg, step_km=1.0):
     """
-    Search each effective sound speed profile for refraction points.
+    Search each effective sound speed profile for all refraction points.
 
-    A refraction point is identified if c_eff at any height exceeds
+    A refraction point is identified if c_eff at any sampled height exceeds
     c_eff at the ground surface.
 
     Classification:
       - stratospheric: height between 0 and 50 km
       - thermospheric: height between 50 and 180 km
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Profile dataframe containing z_agl_m and cEff columns.
+    azimuths_deg : list
+        Azimuths to search.
+    step_km : float
+        Vertical sampling interval for the refraction search.
 
     Returns
     -------
@@ -352,21 +375,29 @@ def find_refraction_points(df: pd.DataFrame, azimuths_deg):
     """
     results = []
 
+    z_m_full = df["z_agl_m"].to_numpy()
+    z_km_full = z_m_full / 1000.0
+
+    # Pick profile points closest to every 1 km (or chosen step)
+    target_km = np.arange(0.0, z_km_full.max() + step_km, step_km)
+    sample_idx = np.unique([np.abs(z_km_full - zk).argmin() for zk in target_km])
+
     for az in azimuths_deg:
         az_str = format_deg_for_filename(az)
         col = f"cEff_ms_alpha{az_str}deg"
 
-        c_eff = df[col].to_numpy()
-        z_m = df["z_agl_m"].to_numpy()
-        ground_c_eff = c_eff[0]
+        c_eff_full = df[col].to_numpy()
+        ground_c_eff = c_eff_full[0]
 
-        for ce, z in zip(c_eff, z_m):
+        z_m = z_m_full[sample_idx]
+        z_km = z_km_full[sample_idx]
+        c_eff = c_eff_full[sample_idx]
+
+        for ce, z_m_i, z_km_i in zip(c_eff, z_m, z_km):
             if ce > ground_c_eff:
-                z_km = z / 1000.0
-
-                if 0.0 <= z_km < 50.0:
+                if 0.0 <= z_km_i < 50.0:
                     ref_type = "stratospheric"
-                elif 50.0 <= z_km <= 180.0:
+                elif 50.0 <= z_km_i <= 180.0:
                     ref_type = "thermospheric"
                 else:
                     ref_type = None
@@ -376,11 +407,10 @@ def find_refraction_points(df: pd.DataFrame, azimuths_deg):
                         {
                             "azimuth_deg": az,
                             "type": ref_type,
-                            "height_m": z,
-                            "height_km": z_km,
+                            "height_m": z_m_i,
+                            "height_km": z_km_i,
                         }
                     )
-                break
 
     return results
 
@@ -395,13 +425,19 @@ def print_refraction_summary(results):
         print("  No stratospheric or thermospheric refraction points found.")
         return
 
+    grouped = {}
     for item in results:
-        print(
-            f"  Azimuth {item['azimuth_deg']:g}°: "
-            f"{item['type']} refraction "
-            f"(first exceedance at {item['height_km']:.2f} km AGL)"
-        )
+        key = (item["azimuth_deg"], item["type"])
+        grouped.setdefault(key, []).append(item["height_km"])
 
+    for (az, ref_type), heights in grouped.items():
+        hmin = min(heights)
+        hmax = max(heights)
+        print(
+            f"  Azimuth {az:g}°: {ref_type} refraction from "
+            f"{hmin:.1f} to {hmax:.1f} km AGL"
+        )
+        
 
 def plot_refraction_summary(results, max_height_m, out_png, show=False, save=True):
     """
@@ -419,8 +455,8 @@ def plot_refraction_summary(results, max_height_m, out_png, show=False, save=Tru
 
     fig, ax = plt.subplots(subplot_kw={"projection": "polar"}, figsize=(7, 7))
 
-    # Match your convention: 0° = East, angles increase clockwise
-    ax.set_theta_zero_location("E")
+    # Standard azimuth convention: 0° = North, angles increase clockwise
+    ax.set_theta_zero_location("N")
     ax.set_theta_direction(-1)
 
     max_height_km = max_height_m / 1000.0
@@ -446,7 +482,7 @@ def plot_refraction_summary(results, max_height_m, out_png, show=False, save=Tru
         if plot_label is not None:
             used_labels.add(label)
 
-        ax.scatter(theta, r_km, color=color, s=45, label=plot_label)
+        ax.scatter(theta, r_km, color=color, marker="x", s=10, label=plot_label)
 
     if used_labels:
         ax.legend(loc="upper right", bbox_to_anchor=(1.2, 1.1))
@@ -540,8 +576,7 @@ def main():
     propagation_azimuths_deg = azimuth_config.get_list()
 
     profile_df = add_sound_speeds(profile_df, propagation_azimuths_deg)
-
-    refraction_results = find_refraction_points(profile_df, propagation_azimuths_deg)
+    refraction_results = find_refraction_points(profile_df, propagation_azimuths_deg, step_km=1.0)
     
     if RUN_REFRACTION_FIGURE_PROMPT:
         show_refraction_fig, save_refraction_fig = prompt_refraction_figure_behavior()
@@ -562,25 +597,37 @@ def main():
     stem = json_path.with_suffix("")
     out_dir = stem.parent
 
-    csv_path = out_dir / f"{stem.name}_profiles.csv"
+    # Output subfolders
+    summary_dir = out_dir / "summaries"
+    temp_dir = out_dir / "temperature"
+    u_dir = out_dir / "zonal_wind"
+    v_dir = out_dir / "meridional_wind"
+    rho_dir = out_dir / "density"
+    p_dir = out_dir / "pressure"
+    ceff_dir = out_dir / "effective_sound_speed"
+
+    for folder in [summary_dir, temp_dir, u_dir, v_dir, rho_dir, p_dir, ceff_dir]:
+        folder.mkdir(parents=True, exist_ok=True)
+
+    csv_path = summary_dir / f"{stem.name}_profiles.csv"
     write_profiles_csv(profile_df, csv_path)
 
     z_m = profile_df["z_agl_m"].to_numpy()
 
     plot_specs = [
-        ("T_K", "Temperature (K)", "_T_profile.png"),
-        ("U_ms", "Zonal wind U (m/s, +East)", "_U_profile.png"),
-        ("V_ms", "Meridional wind V (m/s, +North)", "_V_profile.png"),
-        ("rho_kg_m3", "Density (kg/m³)", "_rho_profile.png"),
-        ("P_Pa", "Pressure (Pa)", "_P_profile.png"),
+        ("T_K", "Temperature (K)", temp_dir, "_T_profile.png"),
+        ("U_ms", "Zonal wind U (m/s, +East)", u_dir, "_U_profile.png"),
+        ("V_ms", "Meridional wind V (m/s, +North)", v_dir, "_V_profile.png"),
+        ("rho_kg_m3", "Density (kg/m³)", rho_dir, "_rho_profile.png"),
+        ("P_Pa", "Pressure (Pa)", p_dir, "_P_profile.png"),
     ]
 
-    for col, xlab, suffix in plot_specs:
+    for col, xlab, folder, suffix in plot_specs:
         plot_profile(
             profile_df[col].to_numpy(),
             z_m,
             xlab,
-            out_dir / f"{stem.name}{suffix}",
+            folder / f"{stem.name}{suffix}",
             show=show_plots,
             save=save_plots,
         )
@@ -592,7 +639,7 @@ def main():
             profile_df[col].to_numpy(),
             z_m,
             f"c_eff (m/s) @ azimuth={az_str}°",
-            out_dir / f"{stem.name}_cEff_alpha{az_str}deg_profile.png",
+            ceff_dir / f"{stem.name}_cEff_alpha{az_str}deg_profile.png",
             show=show_plots,
             save=save_plots,
         )
