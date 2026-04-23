@@ -101,38 +101,6 @@ where:
 A potential **refraction point** is of interest when the effective sound speed aloft exceeds the effective sound speed at the ground surface. In other words, this can help indicate if an atmospheric structure is favorable for upward bending reversal or ducted infrasound propagation.
 
 
-## Proposed Workflow
-
-The intended end-to-end workflow is:
-
-1. User runs the script
-2. Script prompts the user to either:
-   - use an existing G2S JSON file, or
-   - download a new one automatically
-3. If downloading a new profile, the script prompts the user for:
-   - date
-   - hour
-   - latitude
-   - longitude
-   - saved file output path
-4. Script prompts the user to choose:
-   - specific propagation azimuths, or
-   - a full 0–359° sweep
-5. Script prompts the user whether to:
-   - show plots interactively
-   - save plots to the output directory
-6. Script loads the atmospheric profile
-7. Script computes:
-   - thermodynamic quantities
-   - wind-dependent effective sound speed
-   - azimuthal variation of effective sound speed
-8. Script exports:
-   - CSV profile tables
-   - standard atmospheric plots
-   - effective sound speed plots
-   - refraction diagnostics
-
-
 ## Dependencies
 
 Current dependencies:
