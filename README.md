@@ -83,7 +83,7 @@ The present script:
 Classes are being implemented to support updating observational azimuth, and the project may later include parallel or concurrent methods to speed up the 0–360° azimuth sweep.
 
 ### Project Task #2
-Input systems (prompting the user in the terminal) have been implemented, and the next step is to implement tests for normal functionality and edge cases.
+Input systems (prompting the user in the terminal) have been implemented, and a very simple test file is initialized. 
 
 ## Scientific Background
 
