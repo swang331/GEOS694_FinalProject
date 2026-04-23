@@ -33,7 +33,6 @@ conda activate g2s_profiles
 ## Current functionality
 The present script:
 
-
 - runs `profiles_update.py`
 - allows the user to either:
   - use an existing G2S JSON file, or
@@ -52,20 +51,29 @@ The present script:
 - allows the user to choose:
   - specific propagation azimuths, or
   - a full **0–359° azimuth sweep**
+- searches each effective sound speed profile for refraction points by comparing the profile to the ground-level effective sound speed
+- classifies detected refraction points as:
+  - **stratospheric** returns (0–50 km)
+  - **thermospheric** returns (50–180 km)
+- prints refraction results to the terminal by azimuth and refraction type
 - writes a CSV summary of the profile
 - generates vertical atmospheric profile plots
 - allows the user to choose whether to:
   - show plots interactively
   - save plots to the output directory
+- generates a polar refraction summary figure showing:
+  - azimuth around the circle
+  - refraction height as radial distance
+  - color-coded refraction type
+- allows the user to choose whether to:
+  - show the refraction summary figure interactively
+  - save the refraction summary figure to the output directory
 
 ### Planned functionality
 The next development stage is intended to:
 
-- further streamline and improve the in-script retrieval of the G2S JSON file
-- expand the use of **classes** to support easier updating and management of the **observational azimuth**
 - determine whether any azimuth exhibits a potential **refraction point**
-- add refraction diagnostics and summary outputs
-- implement tests to ensure functionality and edge cases
+
 
 ## Class Requirements
 ### Project Task #1
