@@ -50,6 +50,10 @@ SHOW_PLOTS = True
 SAVE_PLOTS = True
 RUN_PLOT_PROMPT = True
 
+# Refraction summary figure control
+SHOW_REFRACTION_FIGURE = False
+SAVE_REFRACTION_FIGURE = True
+RUN_REFRACTION_FIGURE_PROMPT = True
 
 class AzimuthConfig:
     """
@@ -136,7 +140,7 @@ def prompt_plot_behavior():
         show_plots, save_plots
     """
     show_reply = input(
-        "Show plots interactively? [y/n]: "
+        "Show all individual profile plots interactively? [y/n]: "
     ).strip().lower()
     show_plots = show_reply in {"y", "yes"}
 
@@ -152,6 +156,28 @@ def prompt_plot_behavior():
         save_plots = save_reply in {"y", "yes"}
 
     return show_plots, save_plots
+
+
+def prompt_refraction_figure_behavior():
+    """
+    Prompt user whether to show and/or save the refraction summary figure.
+    Returns:
+        show_fig, save_fig
+    """
+    show_reply = input(
+        "Show refraction summary figure interactively? [y/n]: "
+    ).strip().lower()
+    show_fig = show_reply in {"y", "yes"}
+
+    if show_fig:
+        save_reply = input(
+            "Also save the refraction summary figure to the output directory? [y/n]: "
+        ).strip().lower()
+        save_fig = save_reply in {"y", "yes"}
+    else:
+        save_fig = True
+
+    return show_fig, save_fig
 
 
 def download_g2s_json():
@@ -304,6 +330,136 @@ def add_sound_speeds(df: pd.DataFrame, azimuths_deg):
     return df
 
 
+def find_refraction_points(df: pd.DataFrame, azimuths_deg):
+    """
+    Search each effective sound speed profile for refraction points.
+
+    A refraction point is identified if c_eff at any height exceeds
+    c_eff at the ground surface.
+
+    Classification:
+      - stratospheric: height between 0 and 50 km
+      - thermospheric: height between 50 and 180 km
+
+    Returns
+    -------
+    results : list of dict
+        Each entry contains:
+          - azimuth_deg
+          - type
+          - height_m
+          - height_km
+    """
+    results = []
+
+    for az in azimuths_deg:
+        az_str = format_deg_for_filename(az)
+        col = f"cEff_ms_alpha{az_str}deg"
+
+        c_eff = df[col].to_numpy()
+        z_m = df["z_agl_m"].to_numpy()
+        ground_c_eff = c_eff[0]
+
+        for ce, z in zip(c_eff, z_m):
+            if ce > ground_c_eff:
+                z_km = z / 1000.0
+
+                if 0.0 <= z_km < 50.0:
+                    ref_type = "stratospheric"
+                elif 50.0 <= z_km <= 180.0:
+                    ref_type = "thermospheric"
+                else:
+                    ref_type = None
+
+                if ref_type is not None:
+                    results.append(
+                        {
+                            "azimuth_deg": az,
+                            "type": ref_type,
+                            "height_m": z,
+                            "height_km": z_km,
+                        }
+                    )
+                break
+
+    return results
+
+
+def print_refraction_summary(results):
+    """
+    Print refraction results to the terminal.
+    """
+    print("\nRefraction point search results:")
+
+    if not results:
+        print("  No stratospheric or thermospheric refraction points found.")
+        return
+
+    for item in results:
+        print(
+            f"  Azimuth {item['azimuth_deg']:g}°: "
+            f"{item['type']} refraction "
+            f"(first exceedance at {item['height_km']:.2f} km AGL)"
+        )
+
+
+def plot_refraction_summary(results, max_height_m, out_png, show=False, save=True):
+    """
+    Plot refraction points on a polar-style azimuth figure.
+
+    Azimuth is plotted around the circle.
+    Radius is height above ground level.
+    Points are colored by refraction type:
+      - stratospheric: blue
+      - thermospheric: red
+    """
+    if not results:
+        print("No refraction points to plot.")
+        return
+
+    fig, ax = plt.subplots(subplot_kw={"projection": "polar"}, figsize=(7, 7))
+
+    # Match your convention: 0° = East, angles increase clockwise
+    ax.set_theta_zero_location("E")
+    ax.set_theta_direction(-1)
+
+    max_height_km = max_height_m / 1000.0
+    ax.set_ylim(0, max_height_km)
+    ax.set_title("Refraction Summary by Azimuth and Height", va="bottom")
+
+    used_labels = set()
+
+    for item in results:
+        az_deg = item["azimuth_deg"]
+        theta = np.deg2rad(az_deg)
+        r_km = item["height_km"]
+        ref_type = item["type"]
+
+        if ref_type == "stratospheric":
+            color = "tab:blue"
+            label = "Stratospheric"
+        else:
+            color = "tab:red"
+            label = "Thermospheric"
+
+        plot_label = label if label not in used_labels else None
+        if plot_label is not None:
+            used_labels.add(label)
+
+        ax.scatter(theta, r_km, color=color, s=45, label=plot_label)
+
+    if used_labels:
+        ax.legend(loc="upper right", bbox_to_anchor=(1.2, 1.1))
+
+    if save:
+        plt.savefig(out_png, dpi=200, bbox_inches="tight")
+
+    if show:
+        plt.show()
+    else:
+        plt.close()
+
+
 def write_profiles_csv(df: pd.DataFrame, out_csv: Path):
     """
     Save a consistent set of columns to CSV (no index column)
@@ -374,9 +530,6 @@ def format_deg_for_filename(deg: float):
 
 def main():
     json_path = download_g2s_json()
-    if not json_path.exists():
-        raise FileNotFoundError(f"Input not found: {json_path}")
-    propagation_azimuths_deg = [0.0, 90.0, 180.0, 270.0]
     g2s_obj = read_g2s_json(json_path)
     profile_df = build_profile_dataframe(g2s_obj)
 
@@ -385,7 +538,16 @@ def main():
         azimuth_config.prompt_user()
 
     propagation_azimuths_deg = azimuth_config.get_list()
+
     profile_df = add_sound_speeds(profile_df, propagation_azimuths_deg)
+
+    refraction_results = find_refraction_points(profile_df, propagation_azimuths_deg)
+    
+    if RUN_REFRACTION_FIGURE_PROMPT:
+        show_refraction_fig, save_refraction_fig = prompt_refraction_figure_behavior()
+    else:
+        show_refraction_fig = SHOW_REFRACTION_FIGURE
+        save_refraction_fig = SAVE_REFRACTION_FIGURE
 
     if RUN_PLOT_PROMPT:
         show_plots, save_plots = prompt_plot_behavior()
@@ -438,6 +600,17 @@ def main():
     meta = g2s_obj.get("meta", {})
     time_str = meta.get("time", {}).get("datetime", "unknown time")
     loc = meta.get("location", {})
+
+    print_refraction_summary(refraction_results)
+
+    refraction_fig_path = out_dir / f"{stem.name}_refraction_summary.png"
+    plot_refraction_summary(
+        refraction_results,
+        max_height_m=profile_df["z_agl_m"].max(),
+        out_png=refraction_fig_path,
+        show=show_refraction_fig,
+        save=save_refraction_fig,
+    )
 
     print(f"Wrote: {csv_path}")
     print(f"Time: {time_str}")
