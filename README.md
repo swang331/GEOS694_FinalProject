@@ -33,7 +33,9 @@ conda activate g2s_profiles
 ```
 
 To run an example, simply cd into the directory and run:
-```python profiles_ipdate.py```
+```
+python profiles_ipdate.py
+```
 then enter all inputs by following the script prompt.
 
 ## Current functionality
