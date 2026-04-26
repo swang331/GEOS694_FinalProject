@@ -7,7 +7,7 @@ DEFAULT_PROPAGATION_AZIMUTHS_DEG = [0.0, 90.0, 180.0, 270.0]
 
 class AzimuthConfig:
     """
-    Store and manage propagation azimuths for effective sound speed calculations.
+    Store and manage propagation azimuths for effective sound speed calculations
     """
     def __init__(self, azimuths_deg=None):
         # If no azimuth list is provided, use the default cardinal directions
@@ -33,7 +33,7 @@ class AzimuthConfig:
 
         # If the user chooses "sweep", create azimuths from 0° to 359° in 1° steps
         if mode_reply == "sweep":
-            print("Running full 360° sweep at 1° spacing. This may create many columns and plots.")
+            print("Running full 360° sweep at 1° spacing. This may create many columns and plots")
             self.azimuths_deg = list(np.arange(0.0, 360.0, 1.0))
             return self.azimuths_deg
 
