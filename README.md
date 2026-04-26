@@ -59,7 +59,7 @@ The present script:
   - effective sound speed for one or more user-defined propagation azimuths
 - allows the user to choose:
   - specific propagation azimuths, or
-  - a full **0–359° azimuth sweep**
+  - a full **0–360° azimuth sweep**
 - searches each effective sound speed profile for refraction points by comparing the profile to the ground-level effective sound speed
 - classifies detected refraction points as:
   - **stratospheric** returns (0–50 km)
