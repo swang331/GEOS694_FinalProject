@@ -13,7 +13,7 @@ The broader goal of this project is to expand the script into a more automated t
 ### Note
 This repo is forked from [G2S (Ground-to-Space)](https://github.com/chetzer-ncpa/ncpag2s-clc), thus any commits not done by me (swang331), and is 1+ year older than the most recent commit is not my work. 
 
-## Instillation
+## Installation
 
 We recommend you install this package into a new
 [conda](https://docs.conda.io/projects/conda/en/latest/index.html) environment.
@@ -22,20 +22,20 @@ We recommend you install this package into a new
 The environment must contain all of the packages listed in the
 [Dependencies](#dependencies) section. 
 
-The provided [`environment.yml`](https://github.com/swang331/GEOS694_FinalProject/blob/main/enviroments.yml)
+The provided [`environments.yml`](https://github.com/swang331/GEOS694_FinalProject/blob/main/environments.yml)
 file contains all neccesary Python packages. 
 
 Run the lines below in terminal to clone the repository:
 ```
 git clone https://github.com/swang331/GEOS694_FinalProject.git
 cd GEOS694_FinalProject
-conda env create -f environment.yml
+conda env create -f environments.yml
 conda activate g2s_profiles
 ```
 
 To run an example, simply cd into the directory and run:
 ```
-python profiles_ipdate.py
+python profiles_update.py
 ```
 then enter all inputs by following the script prompt.
 
