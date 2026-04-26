@@ -80,14 +80,14 @@ The present script:
 
 ### File organization
 GEOS694_FinalProject/<br>
-├── profiles_update.py   # Main script<br>
-├── g2s_io.py            # G2S file input/output<br>
-├── azimuth.py           # Defines azimuth configuration class<br>
-├── analysis.py          # Analysis functions: atmospheric profile dataframe, sound speeds, refraction points<br>
-├── plotting.py          # Contains the plotting functions<br>
-├── prompts.py           # Stores the user input prompt functions<br>
-├── utils.py             # Small helper utilities: formatting azimuth values for filenames<br>
-└── g2s_2023-10-18_37.234_-116.159.json # Example input JSON file (or download new one from script prompt)
+├─ profiles_update.py   # Main script<br>
+├─ g2s_io.py            # G2S file input/output<br>
+├─ azimuth.py           # Defines azimuth configuration class<br>
+├─ analysis.py          # Analysis functions: atmospheric profile dataframe, sound speeds, refraction points<br>
+├─ plotting.py          # Contains the plotting functions<br>
+├─ prompts.py           # Stores the user input prompt functions<br>
+├─ utils.py             # Small helper utilities: formatting azimuth values for filenames<br>
+└─ g2s_2023-10-18_37.234_-116.159.json # Example input JSON file (or download new one from script prompt)
 
 ## Class Requirements
 ### Project Task #1
