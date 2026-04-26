@@ -79,14 +79,14 @@ The present script:
   - save the refraction summary figure to the output directory
 
 ### File organization
-GEOS694_FinalProject/
-├── profiles_update.py   # Main script that coordinates downloading/reading a G2S JSON file, running the analysis, and writing plots and summary outputs<br>
-├── g2s_io.py            # Handles G2S file input/output, including downloading a new JSON profile and reading an existing JSON file into Python<br>
-├── azimuth.py           # Defines the azimuth configuration class used to manage user-selected propagation azimuths or full 360° sweeps<br>
-├── analysis.py          # Contains the analysis functions for building the atmospheric profile dataframe, computing sound speeds, and searching for refraction points<br>
-├── plotting.py          # Contains the plotting functions for vertical profile figures and the polar refraction summary figure<br>
-├── prompts.py           # Stores the user-input prompt functions for download settings, plotting behavior, and other terminal interactions<br>
-├── utils.py             # Stores small helper utilities shared across the project, such as formatting azimuth values for filenames<br>
+GEOS694_FinalProject/<br>
+├── profiles_update.py   # Main script<br>
+├── g2s_io.py            # G2S file input/output<br>
+├── azimuth.py           # Defines azimuth configuration class<br>
+├── analysis.py          # Analysis functions: atmospheric profile dataframe, sound speeds, refraction points<br>
+├── plotting.py          # Contains the plotting functions<br>
+├── prompts.py           # Stores the user input prompt functions<br>
+├── utils.py             # Small helper utilities: formatting azimuth values for filenames<br>
 └── g2s_2023-10-18_37.234_-116.159.json # Example input JSON file (or download new one from script prompt)
 
 ## Class Requirements
