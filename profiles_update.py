@@ -1,603 +1,67 @@
 #!/usr/bin/env python3
-"""
-Convert a downloaded G2S profile JSON into:
-  1) a CSV of profiles (T, U, V, density, pressure) plus sound speeds
-  2) simple profile plots with height on the y-axis (meters AGL)
-
-G2S JSON -> DataFrame -> CSV + plots
-
-Outputs written next to the JSON:
-  - <stem>_profiles.csv (includes z in km and m, plus c0 and c_eff)
-  - <stem>_T_profile.png, <stem>_U_profile.png, <stem>_V_profile.png,
-    <stem>_rho_profile.png, <stem>_P_profile.png
-  - <stem>_cEff_alpha<deg>_profile.png
-
-G2S source code: https://github.com/chetzer-ncpa/ncpag2s-clc
-"""
-
-import json
-from math import cos, radians
 from pathlib import Path
-import subprocess
-import sys
 
-import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
+from azimuth import AzimuthConfig
+from g2s_io import download_g2s_json, read_g2s_json
+from analysis import (
+    build_profile_dataframe,
+    add_sound_speeds,
+    find_refraction_points,
+    print_refraction_summary,
+)
+from plotting import plot_profile, plot_refraction_summary
+from prompts import prompt_plot_behavior, prompt_refraction_figure_behavior
+from utils import format_deg_for_filename
 
-# User config
-# Specify G2S file path here
 JSON_PATH = "/Users/serinawang/Desktop/GEOS694_FinalProject/g2s_2023-10-18_37.234_-116.159.json"
-
-# OR: download JSON file in script
-DOWNLOAD_JSON = False          # Default behavior if not prompting
-RUN_DOWNLOAD_PROMPT = True     # Ask at runtime whether to download a new JSON
-
-# Path to the existing G2S wrapper
+DOWNLOAD_JSON = False
+RUN_DOWNLOAD_PROMPT = True
 G2S_CLI_PATH = r"/Users/serinawang/Desktop/GEOS694_FinalProject/ncpag2s.py"
 
-# Direction of propagation for effective sound speed, measured clockwise from North:
-# One or more azimuths (deg): 0=N, 90=E, 180=S, 270=W
-DEFAULT_PROPAGATION_AZIMUTHS_DEG = [0.0, 90.0, 180.0, 270.0]
 RUN_AZIMUTH_PROMPT = True
-
-# Googled parameters
-GAMMA_AIR = 1.4          # heat capacity ratio
-R_DRY_AIR = 287.0        # J/(kg*K)
-
-# Plot control
-PLOT_MAX_HEIGHT_M = 100000
 SHOW_PLOTS = True
 SAVE_PLOTS = True
 RUN_PLOT_PROMPT = True
-
-# Refraction summary figure control
 SHOW_REFRACTION_FIGURE = False
 SAVE_REFRACTION_FIGURE = True
 RUN_REFRACTION_FIGURE_PROMPT = True
+PLOT_MAX_HEIGHT_M = 100000
 
-class AzimuthConfig:
-    """
-    Store and manage propagation azimuths for effective sound speed calculations.
-    """
-    def __init__(self, azimuths_deg=None):
-        if azimuths_deg is None:
-            azimuths_deg = DEFAULT_PROPAGATION_AZIMUTHS_DEG.copy()
-        self.azimuths_deg = [float(az) % 360.0 for az in azimuths_deg]
-
-    def prompt_user(self):
-        """
-        Prompt user for propagation azimuth choices and update the stored list.
-
-        Options:
-        - list: user enters comma-separated azimuths
-        - sweep: run a full 0–359° sweep
-        """
-        default_str = ", ".join(f"{az:g}" for az in self.azimuths_deg)
-
-        mode_reply = input(
-            'Choose azimuth input mode [type "list" or "sweep"; e.g. sweep]: '
-        ).strip().lower()
-
-        if not mode_reply:
-            mode_reply = "list"
-
-        if mode_reply == "sweep":
-            print("Running full 360° sweep at 1° spacing. This may create many columns and plots.")
-            self.azimuths_deg = list(np.arange(0.0, 360.0, 1.0))
-            return self.azimuths_deg
-
-        az_reply = input(
-            f"Enter propagation azimuth(s) in degrees clockwise from North "
-            f'[e.g. 0, 90, 180, 270 | press Enter for default: {default_str}]: '
-        ).strip()
-
-        if az_reply:
-            self.azimuths_deg = [float(item.strip()) % 360.0 for item in az_reply.split(",")]
-
-        return self.azimuths_deg
-
-    def get_list(self):
-        """
-        Return azimuths as a list of floats.
-        """
-        return self.azimuths_deg.copy()
-
-
-def prompt_g2s_download_specs():
-    """
-    Prompt user for G2S point-download inputs.
-    Returns a dict to be used in the CLI call.
-    """
-    print("\nEnter G2S point-download parameters:")
-    date_str = input("  Date (YYYY-MM-DD) [e.g. 2023-10-18]: ").strip()
-    hour_str = input("  Hour UTC (0-23) [e.g. 15]: ").strip()
-    lat_str = input("  Latitude [e.g. 37.238]: ").strip()
-    lon_str = input("  Longitude [e.g. -116.159]: ").strip()
-
-    lat = float(lat_str)
-    lon = float(lon_str)
-
-    default_out = Path.home() / "Desktop" / f"g2s_{date_str}_{lat:g}_{lon:g}.json"
-    output_str = input(
-        f"  Output JSON path [e.g. {default_out} OR press Enter for default Desktop] \n  Remember directory should include JSON file name: "
-    ).strip()
-    if not output_str:
-        output_str = str(default_out)
-
-    return {
-        "date": date_str,
-        "hour": hour_str,
-        "lat": lat,
-        "lon": lon,
-        "output": output_str,
-    }
-
-
-def prompt_plot_behavior():
-    """
-    Prompt user whether to show plots and/or save plots.
-    Returns:
-        show_plots, save_plots
-    """
-    show_reply = input(
-        "Show all individual profile plots interactively? [y/n]: "
-    ).strip().lower()
-    show_plots = show_reply in {"y", "yes"}
-
-    if show_plots:
-        save_reply = input(
-            "Also save plots to the output directory? [y/n]: "
-        ).strip().lower()
-        save_plots = save_reply in {"y", "yes"}
-    else:
-        save_reply = input(
-            "Do you want to save the produced plots to the output directory? [y/n]: "
-        ).strip().lower()
-        save_plots = save_reply in {"y", "yes"}
-
-    return show_plots, save_plots
-
-
-def prompt_refraction_figure_behavior():
-    """
-    Prompt user whether to show and/or save the refraction summary figure.
-    Returns:
-        show_fig, save_fig
-    """
-    show_reply = input(
-        "Show refraction summary figure interactively? [y/n]: "
-    ).strip().lower()
-    show_fig = show_reply in {"y", "yes"}
-
-    if show_fig:
-        save_reply = input(
-            "Also save the refraction summary figure to the output directory? [y/n]: "
-        ).strip().lower()
-        save_fig = save_reply in {"y", "yes"}
-    else:
-        save_fig = True
-
-    return show_fig, save_fig
-
-
-def download_g2s_json():
-    """
-    Either use an existing JSON file or interactively download a new one
-    using the existing ncpag2s.py CLI.
-    Returns the JSON path that should be processed.
-    """
-    if RUN_DOWNLOAD_PROMPT:
-        reply = input("Download a new G2S JSON now? [y/n]: ").strip().lower()
-        do_download = reply in {"y", "yes"}
-    else:
-        do_download = DOWNLOAD_JSON
-
-    if not do_download:
-        return Path(JSON_PATH).expanduser().resolve()
-
-    cli_path = Path(G2S_CLI_PATH).expanduser().resolve()
-    if not cli_path.exists():
-        raise FileNotFoundError(f"G2S CLI not found: {cli_path}")
-
-    specs = prompt_g2s_download_specs()
-    out_json = Path(specs["output"]).expanduser().resolve()
-    out_json.parent.mkdir(parents=True, exist_ok=True)
-
-    cmd = [
-        sys.executable,
-        str(cli_path),
-        "point",
-        "--date", specs["date"],
-        "--hour", str(specs["hour"]),
-        "--lat", str(specs["lat"]),
-        "--lon", str(specs["lon"]),
-        "--outputformat", "json",
-        "--output", str(out_json),
-    ]
-
-    print("\nDownloading G2S JSON...")
-    print(" ".join(cmd))
-    subprocess.run(cmd, check=True)
-
-    if not out_json.exists():
-        raise FileNotFoundError(f"Expected downloaded JSON not found: {out_json}")
-
-    return out_json
-
-
-def read_g2s_json(json_path: Path):
-    """
-    Read in G2S JSON file
-
-    Returns:
-    dict with keys:
-      - "meta": metadata dict (may be empty)
-      - "data": dict mapping parameter name -> {"units": str|None, "values": list}
-    """
-    with open(json_path, "r") as f:
-        raw = json.load(f)
-
-    # Convert G2S data list into a dict keyed by parameter name for easy access
-    param_map = {}
-    for entry in raw.get("data", []):
-        param = entry.get("parameter")
-        if not param:
-            continue
-        param_map[param] = {
-            "units": entry.get("units"),
-            "values": entry.get("values"),
-        }
-
-    return {"meta": raw.get("metadata", {}), "data": param_map}
-
-
-def build_profile_dataframe(g2s_obj: dict):
-    """
-    Convert the G2S parameter dict into a DataFrame with column names
-
-    Required parameters in the JSON file:
-      - Z0: station elevation / reference height (km) (used to convert AGL->MSL)
-      - Z: height above ground level (km)
-      - T: temperature (K)
-      - U: zonal wind (m/s), positive east
-      - V: meridional wind (m/s), positive north
-      - R: density (g/cm^3)
-      - P: pressure (mbar)
-
-    Returns:
-      z_agl_km, z_msl_km, z_agl_m, z_msl_m,
-      T_K, U_ms, V_ms, rho_g_cm3, rho_kg_m3, P_mbar, P_Pa
-    """
-    data = g2s_obj["data"]
-
-    required_params = ["Z0", "Z", "T", "U", "V", "R", "P"]
-    missing = [k for k in required_params if k not in data]
-    if missing:
-        raise KeyError(f"Missing required parameters in JSON: {missing}")
-
-    ref_height_msl_km = float(data["Z0"]["values"][0])
-    height_agl_km = np.asarray(data["Z"]["values"], dtype=float)
-
-    df = pd.DataFrame(
-        {
-            "z_agl_km": height_agl_km,
-            "z_msl_km": height_agl_km + ref_height_msl_km,
-            "T_K": np.asarray(data["T"]["values"], dtype=float),
-            "U_ms": np.asarray(data["U"]["values"], dtype=float),
-            "V_ms": np.asarray(data["V"]["values"], dtype=float),
-            "rho_g_cm3": np.asarray(data["R"]["values"], dtype=float),
-            "P_mbar": np.asarray(data["P"]["values"], dtype=float),
-        }
-    )
-
-    df["z_agl_m"] = df["z_agl_km"] * 1000.0
-    df["z_msl_m"] = df["z_msl_km"] * 1000.0
-
-    df["rho_kg_m3"] = df["rho_g_cm3"] * 1000.0
-    df["P_Pa"] = df["P_mbar"] * 100.0
-
-    return df
-
-
-def add_sound_speeds(df: pd.DataFrame, azimuths_deg):
-    """
-    Add:
-      - c0_ms: adiabatic sound speed from temperature (m/s)
-      - cEff_ms_alpha<deg>: effective sound speed for each azimuth in azimuths_deg
-
-    Effective sound speed:
-        c_eff = c0 + wind_along_path
-
-    With azimuth measured clockwise from North:
-      - 0° = North
-      - 90° = East
-      - 180° = South
-      - 270° = West
-
-    The propagation-direction unit vector is:
-      s_hat = [sin(alpha), cos(alpha)]
-    where components are [East, North].
-
-    Therefore:
-      wind_along = U * sin(alpha) + V * cos(alpha)
-
-    where:
-      U is eastward (+E)
-      V is northward (+N)
-    """
-    df["c0_ms"] = np.sqrt(GAMMA_AIR * R_DRY_AIR * df["T_K"].to_numpy())
-
-    if np.isscalar(azimuths_deg):
-        azimuths = [float(azimuths_deg)]
-    else:
-        azimuths = [float(a) for a in azimuths_deg]
-
-    for az in azimuths:
-        alpha = radians(az)
-        wind_along_path = df["U_ms"] * np.sin(alpha) + df["V_ms"] * np.cos(alpha)
-
-        az_str = format_deg_for_filename(az)
-        col = f"cEff_ms_alpha{az_str}deg"
-        df[col] = df["c0_ms"] + wind_along_path
-
-    return df
-
-
-def find_refraction_points(df: pd.DataFrame, azimuths_deg, step_km=1.0):
-    """
-    Search each effective sound speed profile for all refraction points.
-
-    A refraction point is identified if c_eff at any sampled height exceeds
-    c_eff at the ground surface.
-
-    Classification:
-      - stratospheric: height between 0 and 50 km
-      - thermospheric: height between 50 and 180 km
-
-    Parameters
-    ----------
-    df : pandas.DataFrame
-        Profile dataframe containing z_agl_m and cEff columns.
-    azimuths_deg : list
-        Azimuths to search.
-    step_km : float
-        Vertical sampling interval for the refraction search.
-
-    Returns
-    -------
-    results : list of dict
-        Each entry contains:
-          - azimuth_deg
-          - type
-          - height_m
-          - height_km
-    """
-    results = []
-
-    z_m_full = df["z_agl_m"].to_numpy()
-    z_km_full = z_m_full / 1000.0
-
-    # Pick profile points closest to every 1 km (or chosen step)
-    target_km = np.arange(0.0, z_km_full.max() + step_km, step_km)
-    sample_idx = np.unique([np.abs(z_km_full - zk).argmin() for zk in target_km])
-
-    for az in azimuths_deg:
-        az_str = format_deg_for_filename(az)
-        col = f"cEff_ms_alpha{az_str}deg"
-
-        c_eff_full = df[col].to_numpy()
-        ground_c_eff = c_eff_full[0]
-
-        z_m = z_m_full[sample_idx]
-        z_km = z_km_full[sample_idx]
-        c_eff = c_eff_full[sample_idx]
-
-        for ce, z_m_i, z_km_i in zip(c_eff, z_m, z_km):
-            if ce > ground_c_eff:
-                if 0.0 <= z_km_i < 50.0:
-                    ref_type = "stratospheric"
-                elif 50.0 <= z_km_i <= 180.0:
-                    ref_type = "thermospheric"
-                else:
-                    ref_type = None
-
-                if ref_type is not None:
-                    results.append(
-                        {
-                            "azimuth_deg": az,
-                            "type": ref_type,
-                            "height_m": z_m_i,
-                            "height_km": z_km_i,
-                        }
-                    )
-
-    return results
-
-
-def print_refraction_summary(results):
-    """
-    Print refraction results to the terminal.
-    """
-    print("\nRefraction point search results:")
-
-    if not results:
-        print("  No stratospheric or thermospheric refraction points found.")
-        return
-
-    grouped = {}
-    for item in results:
-        key = (item["azimuth_deg"], item["type"])
-        grouped.setdefault(key, []).append(item["height_km"])
-
-    for (az, ref_type), heights in grouped.items():
-        hmin = min(heights)
-        hmax = max(heights)
-        print(
-            f"  Azimuth {az:g}°: {ref_type} refraction from "
-            f"{hmin:.1f} to {hmax:.1f} km AGL"
-        )
-        
-
-def plot_refraction_summary(results, max_height_m, out_png, show=False, save=True):
-    """
-    Plot refraction points on a polar-style azimuth figure.
-
-    Azimuth is plotted around the circle.
-    Radius is height above ground level.
-    Points are colored by refraction type:
-      - stratospheric: blue
-      - thermospheric: red
-    """
-    if not results:
-        print("No refraction points to plot.")
-        return
-
-    fig, ax = plt.subplots(subplot_kw={"projection": "polar"}, figsize=(7, 7))
-
-    # Standard azimuth convention: 0° = North, angles increase clockwise
-    ax.set_theta_zero_location("N")
-    ax.set_theta_direction(-1)
-
-    max_height_km = max_height_m / 1000.0
-    ax.set_ylim(0, max_height_km)
-    ax.set_title("Refraction Summary by Azimuth and Height", va="bottom")
-
-    used_labels = set()
-
-    for item in results:
-        az_deg = item["azimuth_deg"]
-        theta = np.deg2rad(az_deg)
-        r_km = item["height_km"]
-        ref_type = item["type"]
-
-        if ref_type == "stratospheric":
-            color = "tab:blue"
-            label = "Stratospheric"
-        else:
-            color = "tab:red"
-            label = "Thermospheric"
-
-        plot_label = label if label not in used_labels else None
-        if plot_label is not None:
-            used_labels.add(label)
-
-        ax.scatter(theta, r_km, color=color, marker="x", s=10, label=plot_label)
-
-    if used_labels:
-        ax.legend(loc="upper right", bbox_to_anchor=(1.2, 1.1))
-
-    if save:
-        plt.savefig(out_png, dpi=200, bbox_inches="tight")
-
-    if show:
-        plt.show()
-    else:
-        plt.close()
-
-
-def write_profiles_csv(df: pd.DataFrame, out_csv: Path):
-    """
-    Save a consistent set of columns to CSV (no index column)
-    Includes any cEff_ms_alpha<deg>deg columns if present
-    """
+def write_profiles_csv(df, out_csv: Path):
     base_columns = [
-        "z_agl_km",
-        "z_msl_km",
-        "z_agl_m",
-        "z_msl_m",
-        "T_K",
-        "U_ms",
-        "V_ms",
-        "rho_g_cm3",
-        "rho_kg_m3",
-        "P_mbar",
-        "P_Pa",
-        "c0_ms",
+        "z_agl_km", "z_msl_km", "z_agl_m", "z_msl_m",
+        "T_K", "U_ms", "V_ms", "rho_g_cm3", "rho_kg_m3",
+        "P_mbar", "P_Pa", "c0_ms",
     ]
-
     c_eff_cols = sorted([c for c in df.columns if c.startswith("cEff_ms_alpha")])
-
-    df.to_csv(
-        out_csv,
-        index=False,
-        float_format="%.8g",
-        columns=base_columns + c_eff_cols,
-    )
-
-
-def plot_profile(
-    x_values: np.ndarray,
-    z_agl_m: np.ndarray,
-    xlabel: str,
-    out_png: Path,
-    ymax_m: float = PLOT_MAX_HEIGHT_M,
-    show: bool = SHOW_PLOTS,
-    save: bool = SAVE_PLOTS,
-):
-    """
-    Plot x vs height (AGL, meters), optionally save to PNG and/or show interactively.
-    """
-    plt.figure(figsize=(4, 6))
-    plt.plot(x_values, z_agl_m)
-    plt.xlabel(xlabel)
-    plt.ylabel("Height AGL (m)")
-    plt.grid(True, linestyle=":", linewidth=0.6)
-    plt.ylim(0, ymax_m)
-    plt.tight_layout()
-
-    if save:
-        plt.savefig(out_png, dpi=200)
-
-    if show:
-        plt.show()
-    else:
-        plt.close()
-
-
-def format_deg_for_filename(deg: float):
-    """
-    Make a compact degree string for filenames (e.g., 0, 45, 12.5)
-    """
-    if abs(deg - round(deg)) < 1e-6:
-        return str(int(round(deg)))
-    return f"{deg:g}"
-
+    df.to_csv(out_csv, index=False, float_format="%.8g", columns=base_columns + c_eff_cols)
 
 def main():
-    json_path = download_g2s_json()
+    json_path = download_g2s_json(RUN_DOWNLOAD_PROMPT, DOWNLOAD_JSON, JSON_PATH, G2S_CLI_PATH)
     g2s_obj = read_g2s_json(json_path)
     profile_df = build_profile_dataframe(g2s_obj)
 
     azimuth_config = AzimuthConfig()
     if RUN_AZIMUTH_PROMPT:
         azimuth_config.prompt_user()
-
     propagation_azimuths_deg = azimuth_config.get_list()
 
     profile_df = add_sound_speeds(profile_df, propagation_azimuths_deg)
     refraction_results = find_refraction_points(profile_df, propagation_azimuths_deg, step_km=1.0)
-    
+
     if RUN_REFRACTION_FIGURE_PROMPT:
         show_refraction_fig, save_refraction_fig = prompt_refraction_figure_behavior()
     else:
-        show_refraction_fig = SHOW_REFRACTION_FIGURE
-        save_refraction_fig = SAVE_REFRACTION_FIGURE
+        show_refraction_fig, save_refraction_fig = SHOW_REFRACTION_FIGURE, SAVE_REFRACTION_FIGURE
 
     if RUN_PLOT_PROMPT:
         show_plots, save_plots = prompt_plot_behavior()
     else:
-        show_plots = SHOW_PLOTS
-        save_plots = SAVE_PLOTS
+        show_plots, save_plots = SHOW_PLOTS, SAVE_PLOTS
 
-    if len(propagation_azimuths_deg) > 20 and show_plots:
-        print("Warning: many azimuths selected; interactive plotting may open many figure windows.")
-
-    # Output paths
     stem = json_path.with_suffix("")
     out_dir = stem.parent
 
-    # Output subfolders
     summary_dir = out_dir / "summaries"
     temp_dir = out_dir / "temperature"
     u_dir = out_dir / "zonal_wind"
@@ -613,7 +77,6 @@ def main():
     write_profiles_csv(profile_df, csv_path)
 
     z_m = profile_df["z_agl_m"].to_numpy()
-
     plot_specs = [
         ("T_K", "Temperature (K)", temp_dir, "_T_profile.png"),
         ("U_ms", "Zonal wind U (m/s, +East)", u_dir, "_U_profile.png"),
@@ -623,46 +86,21 @@ def main():
     ]
 
     for col, xlab, folder, suffix in plot_specs:
-        plot_profile(
-            profile_df[col].to_numpy(),
-            z_m,
-            xlab,
-            folder / f"{stem.name}{suffix}",
-            show=show_plots,
-            save=save_plots,
-        )
+        plot_profile(profile_df[col].to_numpy(), z_m, xlab, folder / f"{stem.name}{suffix}",
+                     ymax_m=PLOT_MAX_HEIGHT_M, show=show_plots, save=save_plots)
 
     for az in propagation_azimuths_deg:
         az_str = format_deg_for_filename(az)
         col = f"cEff_ms_alpha{az_str}deg"
-        plot_profile(
-            profile_df[col].to_numpy(),
-            z_m,
-            f"c_eff (m/s) @ azimuth={az_str}°",
-            ceff_dir / f"{stem.name}_cEff_alpha{az_str}deg_profile.png",
-            show=show_plots,
-            save=save_plots,
-        )
-
-    meta = g2s_obj.get("meta", {})
-    time_str = meta.get("time", {}).get("datetime", "unknown time")
-    loc = meta.get("location", {})
+        plot_profile(profile_df[col].to_numpy(), z_m, f"c_eff (m/s) @ azimuth={az_str}°",
+                     ceff_dir / f"{stem.name}_cEff_alpha{az_str}deg_profile.png",
+                     ymax_m=PLOT_MAX_HEIGHT_M, show=show_plots, save=save_plots)
 
     print_refraction_summary(refraction_results)
 
     refraction_fig_path = out_dir / f"{stem.name}_refraction_summary.png"
-    plot_refraction_summary(
-        refraction_results,
-        max_height_m=profile_df["z_agl_m"].max(),
-        out_png=refraction_fig_path,
-        show=show_refraction_fig,
-        save=save_refraction_fig,
-    )
-
-    print(f"Wrote: {csv_path}")
-    print(f"Time: {time_str}")
-    print(f"Location: lat {loc.get('latitude')}, lon {loc.get('longitude')}")
-
+    plot_refraction_summary(refraction_results, profile_df["z_agl_m"].max(), refraction_fig_path,
+                            show=show_refraction_fig, save=save_refraction_fig)
 
 if __name__ == "__main__":
     main()
