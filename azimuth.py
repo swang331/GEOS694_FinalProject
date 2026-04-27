@@ -24,7 +24,7 @@ class AzimuthConfig:
         # Ask the user whether they want to enter a custom azimuth list
         # or run a full sweep through all azimuths
         mode_reply = input(
-            # Choose azimuth input mode [type "list" or "sweep"; e.g. sweep]:
+            'Choose azimuth input mode [type "list" or "sweep"; e.g. sweep]: '
         ).strip().lower()
 
         # If the user presses Enter, default to a manual azimuth list
