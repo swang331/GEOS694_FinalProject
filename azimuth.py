@@ -31,7 +31,7 @@ class AzimuthConfig:
         if not mode_reply:
             mode_reply = "list"
 
-        # If the user chooses "sweep", create azimuths from 0° to 359° in 1° steps
+        # If the user chooses "sweep", create azimuths from 0° to 360° in 1° steps
         if mode_reply == "sweep":
             print("Running full 360° sweep at 1° spacing. This may create many columns and plots")
             self.azimuths_deg = list(np.arange(0.0, 360.0, 1.0))
